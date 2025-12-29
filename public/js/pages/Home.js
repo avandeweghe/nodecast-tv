@@ -16,6 +16,10 @@ class HomePage {
         // Silently fetch EPG data for sidebar info
         try {
             await this.app.epgGuide.fetchEpgData();
+
+            // Clear cache so we don't get stale "null" results from initial render
+            this.app.channelList.clearProgramInfoCache();
+
             // Update program info in existing DOM elements without re-rendering
             this.updateProgramInfo();
         } catch (err) {

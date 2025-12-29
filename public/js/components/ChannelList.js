@@ -172,6 +172,16 @@ class ChannelList {
         }
     }
 
+    /**
+     * Clear program info cache
+     * Useful when EPG data has been updated
+     */
+    clearProgramInfoCache() {
+        if (this._programInfoCache) {
+            this._programInfoCache.clear();
+        }
+    }
+
     escapeHtml(text) {
         if (!text) return '';
         return text
