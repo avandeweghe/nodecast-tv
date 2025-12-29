@@ -2,7 +2,7 @@
     "name": "nodecast-tv",
     "version": "1.0.0",
     "description": "Modern IPTV Player",
-    "license": "CC-BY-NC-SA-4.0",
+    "license": "GPL-3.0-only",
     "main": "server/index.js",
     "scripts": {
         "start": "node server/index.js",
