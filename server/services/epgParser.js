@@ -279,7 +279,7 @@ async function* parseStreaming(input, batchSize = 1000) {
     let currentObject = null;
     let textBuffer = '';
     let resolveNext = null;
-    let pendingBatch = null;
+    const pendingBatches = [];
     let ended = false;
     let error = null;
 
@@ -351,7 +351,7 @@ async function* parseStreaming(input, batchSize = 1000) {
                         resolveNext(batch);
                         resolveNext = null;
                     } else {
-                        pendingBatch = batch;
+                        pendingBatches.push(batch);
                     }
                 }
             }
@@ -398,7 +398,7 @@ async function* parseStreaming(input, batchSize = 1000) {
             resolveNext(batch);
             resolveNext = null;
         } else {
-            pendingBatch = batch;
+            pendingBatches.push(batch);
         }
     });
 
@@ -413,10 +413,9 @@ async function* parseStreaming(input, batchSize = 1000) {
     input.pipe(saxStream);
 
     // Yield batches as they become available
-    while (!ended || pendingBatch) {
-        if (pendingBatch) {
-            const batch = pendingBatch;
-            pendingBatch = null;
+    while (!ended || pendingBatches.length > 0) {
+        if (pendingBatches.length > 0) {
+            const batch = pendingBatches.shift();
             yield batch;
             if (batch.isLast) break;
         } else if (!ended) {
