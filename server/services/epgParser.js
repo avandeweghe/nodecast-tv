@@ -266,9 +266,11 @@ async function* fetchAndParseStreaming(url, batchSize = 1000) {
  * @yields {{ channels: Array|null, programmes: Array, isLast: boolean }}
  */
 async function* parseStreaming(input, batchSize = 1000) {
-    const channels = [];
+    let channels = [];
     let programmeBatch = [];
     let channelsYielded = false;
+    const maxPenmdingBatches = 4;
+    let paused = false;
 
     // We need to convert SAX events to an async iterator
     // This requires collecting events and yielding when batch is full
@@ -345,26 +347,27 @@ async function* parseStreaming(input, batchSize = 1000) {
                         isLast: false
                     };
                     channelsYielded = true;
+
+                    // allow channels array to be GC'd after included in first batch
+                    try { if (channels && channels.length) channels = null; } catch (e) {}
+
                     programmeBatch = [];
 
-                    // Debug: batch created
-                    try {
-                        console.log(`[epgParser] batch CREATED size=${batch.programmes.length} channelsYielded=${!!batch.channels} pendingBefore=${pendingBatches.length} time=${new Date().toISOString()}`);
-                    } catch (e) { }
-
                     if (resolveNext) {
-                        // Consumer is waiting; resolve immediately
-                        try {
-                            console.log(`[epgParser] resolving waiting consumer for batch time=${new Date().toISOString()}`);
-                        } catch (e) { }
                         resolveNext(batch);
                         resolveNext = null;
                     } else {
-                        // No consumer waiting; queue batch
                         pendingBatches.push(batch);
+
+                        // Apply backpressure when queue grows too large
                         try {
-                            console.log(`[epgParser] queued batch pendingAfter=${pendingBatches.length} time=${new Date().toISOString()}`);
-                        } catch (e) { }
+                            if (!paused && pendingBatches.length >= maxPenmdingBatches) {
+                                if (input && typeof input.pause === 'function') {
+                                    input.pause();
+                                    paused = true;
+                                }
+                            }
+                        } catch (e) {}
                     }
                 }
             }
@@ -407,17 +410,11 @@ async function* parseStreaming(input, batchSize = 1000) {
             programmes: programmeBatch,
             isLast: true
         };
-        try {
-            console.log(`[epgParser] stream END; final batch size=${batch.programmes.length} pendingBefore=${pendingBatches.length} time=${new Date().toISOString()}`);
-        } catch (e) { }
-
         if (resolveNext) {
-            try { console.log(`[epgParser] resolving waiting consumer for final batch time=${new Date().toISOString()}`); } catch (e) {}
             resolveNext(batch);
             resolveNext = null;
         } else {
             pendingBatches.push(batch);
-            try { console.log(`[epgParser] queued final batch pendingAfter=${pendingBatches.length} time=${new Date().toISOString()}`); } catch (e) {}
         }
     });
 
@@ -429,14 +426,24 @@ async function* parseStreaming(input, batchSize = 1000) {
     });
 
     // Start piping
-    try { console.log(`[epgParser] starting pipe at ${new Date().toISOString()}`); } catch (e) {}
     input.pipe(saxStream);
 
     // Yield batches as they become available
+    
     while (!ended || pendingBatches.length > 0) {
         if (pendingBatches.length > 0) {
             const batch = pendingBatches.shift();
-            try { console.log(`[epgParser] yielding batch size=${batch.programmes.length} pendingAfter=${pendingBatches.length} isLast=${batch.isLast} time=${new Date().toISOString()}`); } catch (e) {}
+
+            // If paused and queue drained below threshold, resume
+            try {
+                if (paused && pendingBatches.length < maxPenmdingBatches) {
+                    if (input && typeof input.resume === 'function') {
+                        input.resume();
+                        paused = false;
+                    }
+                }
+            } catch (e) {}
+
             yield batch;
             if (batch.isLast) break;
         } else if (!ended) {
@@ -445,7 +452,6 @@ async function* parseStreaming(input, batchSize = 1000) {
                 resolveNext = resolve;
             });
             if (batch) {
-                try { console.log(`[epgParser] consumer received batch size=${batch.programmes.length} isLast=${batch.isLast} time=${new Date().toISOString()}`); } catch (e) {}
                 yield batch;
                 if (batch.isLast) break;
             }
